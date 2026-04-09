@@ -1,238 +1,189 @@
 <template>
   <div class="hud-container font-mono">
-    <!-- 1. 3D 背景渲染层 -->
+    <!-- 1. 3D 背景层 (风洞场景) -->
     <div class="scene-layer">
-      <RocketScene />
+      <WindTunnelScene />
     </div>
 
-    <!-- 2. UI 覆盖层 (HUD) -->
+    <!-- 2. UI 覆盖层 -->
     <div class="hud-overlay pointer-events-none">
       
-      <!-- [顶部] 任务信息条 -->
+      <!-- [顶部] 全局任务状态 -->
       <header class="hud-header pointer-events-auto">
         <div class="mission-timer text-cyan-400">
-          <span class="text-xs text-gray-500 mr-2">MISSION TIME</span>
-          {{ rocketStore.formattedTime }}
+          <span class="text-gray-500 mr-2 text-[1vh]">TEST DURATION</span>
+          T+ {{ wtStore.formatTime }}
         </div>
+        
         <div class="system-title-container">
           <div class="system-title text-shadow-glow">
-            冷湖火箭数字孪生系统 <span class="text-cyan-500">V2.0</span>
+            冷湖智能风洞测试系统 <span class="text-cyan-500">V3.0</span>
           </div>
           <div class="system-subtitle-en">
-            LENGHU ROCKET DIGITAL TWIN SYSTEM
+            LENGHU SMART WIND TUNNEL DIGITAL TWIN
           </div>
         </div>
+
         <div class="header-right-area">
-        <div class="real-clock text-gray-400">
-          {{ realTime }}
+          <div class="real-clock text-gray-400 mr-4">{{ realTime }}</div>
+          <div class="status-led flex items-center">
+            <span :class="['w-2 h-2 rounded-full mr-2', wtStore.isFanOn ? 'bg-green-400 shadow-[0_0_8px_#4ade80]' : 'bg-red-600']"></span>
+            <span class="text-[1vh] text-cyan-500/80">LINK: 10Hz</span>
+          </div>
+          <!-- 预留全屏按钮 -->
+          <div class="fullscreen-btn" @click="toggleFullscreen">🔳 全屏</div>
         </div>
-        <!-- 全屏按钮 -->
-        <div class="fullscreen-btn" @click="toggleFullscreen">
-          <span v-if="!isFullscreen">🔳 全屏显示</span>
-          <span v-else>退出全屏</span>
-        </div>
-       </div> 
       </header>
 
-      <!-- [主体] 左右数据面板 -->
+      <!--[主体] 左右数据面板 -->
       <main class="hud-main">
-        <!-- 左侧：动力学参数区 (Kinematics) -->
+        
+        <!-- ================= 左侧：流场动力 (FLOW & FACILITY) ================= -->
         <aside class="hud-side-left pointer-events-auto">
-          <div class="section-label">KINEMATICS / 动力学</div>
+          <div class="section-label">FLOW DYNAMICS / 流场动力</div>
           
-          <!-- 过载 G 值 -->
-          <div class="data-item">
-            <div class="label">G-FORCE</div>
-            <div class="value-row">
-              <span class="value">{{ (rocketStore.gForce || 0).toFixed(2) }}</span>
-              <span class="unit">G</span>
+          <!-- 核心：风速 -->
+          <div class="data-item mt-2">
+            <div class="label flex justify-between">
+              <span>WIND SPEED (km/h)</span>
+              <span class="text-cyan-500">{{ wtStore.actualSpeedMs.toFixed(1) }} m/s</span>
             </div>
-            <div class="progress-bg">
-              <div class="progress-bar" :style="{ width: Math.min((rocketStore.gForce / 5) * 100, 100) + '%' }"></div>
+            <div class="value text-4xl text-white font-black text-shadow-glow">
+              {{ (wtStore.actualSpeedMs * 3.6).toFixed(1) }}
             </div>
-          </div>
-
-          <!-- 垂直速度 -->
-          <div class="data-item">
-            <div class="label">VERT. VELOCITY</div>
-            <div class="value-row">
-              <span class="value">{{ (rocketStore.verticalSpeed || 0).toFixed(1) }}</span>
-              <span class="unit">m/s</span>
+            <!-- 风速进度条 -->
+            <div class="progress-bg mt-2 h-1.5">
+              <div class="progress-bar bg-cyan-400" :style="{ width: Math.min((wtStore.actualSpeedMs * 3.6 / 200) * 100, 100) + '%' }"></div>
             </div>
           </div>
 
-          <!-- 加速度三轴分布 -->
-          <div class="data-item">
-            <div class="label">ACCELERATION (X/Y/Z)</div>
-            <div class="grid grid-cols-3 gap-2 quat-stream-text">
-              <div class="bg-cyan-900/20 p-2 rounded-sm border border-cyan-500/10">X: {{ rocketStore.acc?.x.toFixed(2) }}</div>
-              <div class="bg-cyan-900/20 p-2 rounded-sm border border-cyan-500/10">Y: {{ rocketStore.acc?.y.toFixed(2) }}</div>
-              <div class="bg-cyan-900/20 p-2 rounded-sm border border-cyan-500/10">Z: {{ rocketStore.acc?.z.toFixed(2) }}</div>
+          <!-- 环境网格数据 -->
+          <div class="data-item mt-4">
+            <div class="label">TEST SECTION ENV / 测试段环境</div>
+            <div class="grid grid-cols-2 gap-2 mt-1">
+              <div class="env-cell">
+                <div class="env-cell-title">AIR DENSITY (ρ)</div>
+                <div class="env-cell-val">{{ wtStore.airDensity.toFixed(3) }} <span class="text-[1vh]">kg/m³</span></div>
+              </div>
+              <div class="env-cell">
+                <div class="env-cell-title">DYNAMIC PRESS (q)</div>
+                <div class="env-cell-val text-yellow-400">{{ wtStore.dynamicPressure.toFixed(1) }} <span class="text-[1vh]">Pa</span></div>
+              </div>
             </div>
           </div>
 
-          <!-- 飞行剖面图表 (高度适配，解决文字遮挡) -->
-          <div class="data-item chart-container-l border-t border-cyan-500/20 pt-4">
-            <div class="label">FLIGHT PROFILE / 轨迹记录</div>
-            <FlightChart />
+          <!-- 风速曲线图占位 -->
+          <div class="data-item flex-1 border-t border-cyan-500/20 mt-4 pt-4 flex flex-col">
+            <div class="label">WIND PROFILE / 气流稳定性</div>
+            <!-- 这里可以放一个 ECharts 折线图，目前用工业风网格占位 -->
+            <div class="chart-placeholder flex-1 w-full mt-2 border border-cyan-900/30 relative">
+               <div class="absolute inset-0 flex items-center justify-center text-cyan-800/50 text-[1vh]">CHART AREA</div>
+            </div>
           </div>
         </aside>
 
-        <!-- [中间] 交互与瞄准区 -->
+        <!-- ================= 中间：交互与控制 (CONTROL DECK) ================= -->
         <section class="hud-center">
-          <!-- 发射按钮：仅在未发射时显示 -->
-          <button v-if="!rocketStore.isLaunched" class="launch-btn pointer-events-auto" @click="rocketStore.startLaunch()">
-            <div class="btn-content">
-              <span class="btn-status-text">SYSTEM: READY TO IGNITION</span>
-              <span class="btn-main-text">确认发射 LAUNCH</span>
-            </div>
-            <div class="btn-scan"></div>
-          </button>
-
-          <!-- 瞄准框：发射后显示，随窗口自动缩放 -->
-          <div v-else class="targeting-reticle">
-            <div class="reticle-bracket bracket-tl"></div>
-            <div class="reticle-bracket bracket-tr"></div>
-            <div class="reticle-bracket bracket-bl"></div>
-            <div class="reticle-bracket bracket-br"></div>
-        
-            <div class="reticle-data">
-              <!-- 左侧：俯仰 -->
-              <div class="data-item-float left-side">
-                <div class="float-label">PITCH</div>
-                <div class="float-value">{{ rocketStore.pitch.toFixed(1) }}°</div>
-              </div>
-              <!-- 右侧：偏航 -->
-              <div class="data-item-float right-side">
-                <div class="float-label">YAW</div>
-                <div class="float-value">{{ rocketStore.yaw.toFixed(1) }}°</div>
-              </div>
-              <!-- 底部：滚转水平仪 -->
-              <div class="data-item-float bottom-side">
-                <div class="float-label">ROLL / 滚转</div>
-                <div class="float-value">{{ rocketStore.roll.toFixed(1) }}°</div>
-                <div class="roll-container">
-                  <div class="roll-scale-bg"></div>
-                  <div class="roll-horizon-bar" :style="{ transform: `rotate(${-rocketStore.roll}deg)` }"></div>
-                </div>
-              </div>
-            </div>
+          
+          <!-- 瞄准框 -->
+          <div class="targeting-reticle">
+            <div class="reticle-bracket bracket-tl"></div><div class="reticle-bracket bracket-tr"></div>
+            <div class="reticle-bracket bracket-bl"></div><div class="reticle-bracket bracket-br"></div>
             <div class="center-cross"></div>
+          </div>
+
+          <!-- 底部控制台 -->
+          <div class="control-console pointer-events-auto">
+            <button class="power-btn" @click="wtStore.toggleFan" :class="wtStore.isFanOn ? 'active' : ''">
+              {{ wtStore.isFanOn ? 'STOP FAN / 停机' : 'START FAN / 启动风机' }}
+            </button>
+            
+            <!-- 风速滑动条 (仅在启动时可用) -->
+            <div class="slider-container" :class="{'opacity-30 pointer-events-none': !wtStore.isFanOn}">
+              <div class="flex justify-between text-[1vh] text-cyan-400 mb-1 font-bold">
+                <span>TARGET: {{ wtStore.targetSpeedKmh }} km/h</span>
+                <span>MAX: 200</span>
+              </div>
+              <input 
+                type="range" min="0" max="200" step="5" 
+                v-model="wtStore.targetSpeedKmh" 
+                class="industrial-slider"
+              >
+            </div>
           </div>
         </section>
 
-        <!-- 右侧：姿态与动态区 (Attitude) -->
+        <!-- ================= 右侧：空气动力学 (AERODYNAMICS) ================= -->
         <aside class="hud-side-right pointer-events-auto">
-          <div class="section-label text-right">ATTITUDE / 姿态控制</div>
+          <div class="section-label text-right">AERODYNAMICS / 气动测力</div>
 
-          <!-- 实时姿态 -->
-          <div class="data-item text-right">
-            <div class="label">PITCH / YAW / ROLL</div>
-            <div class="value text-cyan-400">
-              {{ rocketStore.pitch.toFixed(1) }}° / {{ rocketStore.yaw.toFixed(1) }}° / {{ rocketStore.roll.toFixed(1) }}°
+          <!-- 阻力数据 -->
+          <div class="data-item text-right mt-2">
+            <div class="label">DRAG FORCE (Fx) / 风阻力</div>
+            <div class="value text-4xl text-red-400 font-black" style="text-shadow: 0 0 15px rgba(248, 113, 113, 0.6);">
+              {{ wtStore.dragForce.toFixed(1) }} <span class="text-xl text-red-500/80">N</span>
             </div>
           </div>
 
-          <!-- 陀螺仪旋转频率 -->
-          <div class="data-item text-right">
-            <div class="label">GYRO ROTATION (deg/s)</div>
-            <div class="flex justify-end gap-3 quat-stream-text font-bold">
-              <span class="text-red-400">X:{{ rocketStore.gyro?.x.toFixed(0) }}</span>
-              <span class="text-green-400">Y:{{ rocketStore.gyro?.y.toFixed(0) }}</span>
-              <span class="text-blue-400">Z:{{ rocketStore.gyro?.z.toFixed(0) }}</span>
+          <!-- 气动系数网格 -->
+          <div class="data-item mt-4 text-right">
+            <div class="label">COEFFICIENTS / 气动系数</div>
+            <div class="grid grid-cols-2 gap-2 mt-1 text-left">
+              <div class="env-cell border-red-900/30">
+                <div class="env-cell-title text-red-400/80">DOWNFORCE (Fz)</div>
+                <div class="env-cell-val text-red-300">{{ wtStore.downForce.toFixed(1) }} <span class="text-[1vh]">N</span></div>
+              </div>
+              <div class="env-cell border-green-900/30">
+                <div class="env-cell-title text-green-400/80">DRAG COEF (Cd)</div>
+                <div class="env-cell-val text-green-300">{{ wtStore.dragCoef.toFixed(3) }}</div>
+              </div>
             </div>
           </div>
 
-          <!-- 原始四元数流 (整理过的小字号类名) -->
-          <div class="data-item text-right quat-stream-container">
-            <div class="label">QUATERNION STREAM</div>
-            <div class="quat-stream-text">
-              W:{{ rocketStore.quat_raw?.w.toFixed(4) }} X:{{ rocketStore.quat_raw?.x.toFixed(4) }}
-              Y:{{ rocketStore.quat_raw?.y.toFixed(4) }} Z:{{ rocketStore.quat_raw?.z.toFixed(4) }}
+          <!-- 高级物理参数 -->
+          <div class="data-item text-right mt-4">
+            <div class="label">REYNOLDS NUMBER / 雷诺数</div>
+            <div class="value text-xl text-purple-400">{{ (wtStore.reynoldsNumber).toLocaleString() }}</div>
+          </div>
+
+          <!-- 受力曲线图占位 -->
+          <div class="data-item flex-1 border-t border-cyan-500/20 mt-4 pt-4 flex flex-col">
+            <div class="label text-right">FORCE TREND / 测力曲线</div>
+            <div class="chart-placeholder flex-1 w-full mt-2 border border-red-900/30 relative">
+               <div class="absolute inset-0 flex items-center justify-center text-red-800/50 text-[1vh]">CHART AREA</div>
             </div>
           </div>
-
-          <!-- 姿态雷达图 -->
-          <div class="data-item chart-container-r border-t border-cyan-500/20 pt-4">
-             <AttitudeChart />
-          </div>
-
-          <div class="data-item mt-auto pt-6 border-t border-cyan-500/30">
-            <div class="label text-right mb-2">DATA SOURCE LINK</div>
-            <button 
-              class="mode-toggle-btn"
-              :class="rocketStore.isDemoMode ? 'bg-orange-500/20 border-orange-500 text-orange-400' : 'bg-cyan-500/20 border-cyan-500 text-cyan-400'"
-              @click="rocketStore.toggleMode()"
-            >
-              <span class="indicator" :class="rocketStore.isDemoMode ? 'bg-orange-400 shadow-[0_0_8px_#f97316]' : 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]'"></span>
-              {{ rocketStore.isDemoMode ? '模拟模式 SIMULATION MODE' : '实时遥测 LIVE TELEMETRY' }}
-              
-            </button>
-          </div>
-
         </aside>
       </main>
-
-      <!-- [底部] 环境监测条 (已调小且改为摄氏度) -->
-      <footer class="hud-footer pointer-events-auto">
-        <div class="env-group">
-          <div class="env-box">
-            <span class="label">ALTITUDE</span>
-            <span class="val">{{ rocketStore.altitude.toFixed(3) }}</span><span class="u">km</span>
-          </div>
-          <div class="env-box">
-            <span class="label">PRESSURE</span>
-            <span class="val">{{ rocketStore.pressure.toFixed(0) }}</span><span class="u">Pa</span>
-          </div>
-          <div class="env-box">
-            <span class="label">AMBIENT TEMP</span>
-            <span class="val">{{ rocketStore.temperature.toFixed(1) }}</span><span class="u">°C</span>
-          </div>
-        </div>
-        <div class="system-logs">
-          <div class="log-item">TELEMETRY LINK: ACTIVE (10Hz)</div>
-          <div class="log-item">IMU STATUS: LOCKED / GPS: CALIBRATED</div>
-        </div>
-      </footer>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import RocketScene from './components/RocketScene.vue'
-import { useRocketStore } from './store/rocket'
-import FlightChart from './components/FlightChart.vue'
-import AttitudeChart from './components/AttitudeChart.vue'
+import WindTunnelScene from './components/WindTunnelScene.vue' // 确保你的3D组件名叫这个
+import { useWindTunnelStore } from './store/windTunnel'
 
-const rocketStore = useRocketStore()
+const wtStore = useWindTunnelStore()
 
-//0. 全屏逻辑
-const isFullscreen = ref(false)
-
-const toggleFullscreen = () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
-    isFullscreen.value = true;
-  } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-      isFullscreen.value = false;
-    }
-  }
-}
-
-
-// 1. 实时时钟逻辑
+// 时钟与全屏逻辑
 const realTime = ref('')
 let clockTimer: number
 
 const updateClock = () => {
   const now = new Date()
-  realTime.value = now.getFullYear() + '-' + 
-    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
-    String(now.getDate()).padStart(2, '0') + ' ' + 
-    now.toTimeString().split(' ')[0]
+  realTime.value = now.toTimeString().split(' ')[0]
+}
+
+const isFullscreen = ref(false)
+const toggleFullscreen = () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen()
+    isFullscreen.value = true
+  } else if (document.exitFullscreen) {
+    document.exitFullscreen()
+    isFullscreen.value = false
+  }
 }
 
 onMounted(() => {
@@ -246,272 +197,89 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* =========================================
-   1. 基础布局
-   ========================================= */
+/* 基础适配 */
 .hud-container {
-  @apply relative w-screen h-screen bg-black overflow-hidden text-white selection:bg-cyan-500/30;
+  @apply relative w-screen bg-black overflow-hidden text-white selection:bg-cyan-500/30;
+  height: 100vh; height: 100dvh; 
 }
+.scene-layer { @apply absolute inset-0 z-0; }
+.hud-overlay { @apply absolute inset-0 z-10 flex flex-col; }
 
-.scene-layer {
-  @apply absolute inset-0 z-0;
-}
-
-.hud-overlay {
-  @apply absolute inset-0 z-10 flex flex-col;
-}
-
-/* =========================================
-   2. 顶部状态栏
-   ========================================= */
+/* 顶部 */
 .hud-header {
-  @apply flex items-center px-10 py-4 h-20;
-  position: relative; /* 必须！否则标题无法相对于它居中 */
-  background: linear-gradient(to bottom, rgba(0, 255, 255, 0.12) 0%, transparent 100%);
-  border-bottom: 1px solid rgba(0, 255, 255, 0.15);
+  @apply flex justify-between items-center px-8 h-[8vh];
+  background: linear-gradient(to bottom, rgba(0, 255, 255, 0.1) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
 }
+.system-title-container { @apply absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none; }
+.system-title { @apply text-[2.5vh] font-black tracking-[0.3em] leading-tight text-shadow-glow; }
+.system-subtitle-en { font-size: 0.9vh; @apply font-bold tracking-[0.5em] text-cyan-500 uppercase mt-0.5 opacity-70; }
+.mission-timer, .real-clock { font-size: 1.8vh; @apply font-bold tabular-nums; }
+.header-right-area { @apply flex items-center ml-auto z-10; }
+.fullscreen-btn { @apply px-2 py-0.5 border border-cyan-500/50 text-[1vh] text-cyan-400 cursor-pointer hover:bg-cyan-500/20 ml-4 rounded; }
 
-.header-right-area {
-  display: flex;
-  align-items: center;
-  margin-left: auto; /* 核心：这一行会将整个右侧区域推到最右边 */
-  z-index: 10;       /* 确保在标题层级之上，可以点击 */
-}
-
-/* 标题容器：改为垂直排列并居中 */
-.system-title-container {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none; /* 标题不阻挡点击 */
-  text-align: center;
-}
-
-
-/* 中文主标题：稍微调大字间距 */
-.system-title {
-  @apply text-2xl font-black tracking-[0.3em] leading-tight;
-  text-shadow: 0 0 15px rgba(0, 255, 255, 0.6);
-}
-
-/* 英文副标题：小字、高间距、半透明 */
-.system-subtitle-en {
-  font-size: 1vh; /* 保持小而精致 */
-  @apply font-bold tracking-[0.5em] text-cyan-500 uppercase mt-1;
-  opacity: 0.7;
-  /* 也可以加一点微弱的发光 */
-  text-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
-}
-
-.mission-timer{
-  @apply font-bold tabular-nums text-lg;
-}
-
-.real-clock {
-  font-size: 1.8vh !important; /* 从之前的字号调小 */
-  @apply font-bold tabular-nums;
-  color: rgba(156, 163, 175, 0.7); /* 使用半透明灰色，减少视觉权重 */
-}
-
-/* =========================================
-   3. 侧边数据面板 (核心对称性优化)
-   ========================================= */
-.hud-main {
-  @apply flex-1 relative flex justify-between px-10 py-6;
-}
-
+/* 主体左右侧边栏 */
+.hud-main { @apply flex-1 relative flex justify-between px-8 py-[3vh]; }
 .hud-side-left, .hud-side-right {
-  width: 18vw;         /* 强制左右宽度对称 */
-  min-width: 350px;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5vh;            /* 数据项间距 */
+  width: 22vw; min-width: 320px;
+  @apply flex flex-col gap-[1.5vh];
+}
+.hud-side-left { @apply border-l border-cyan-500/20 pl-6; }
+.hud-side-right { @apply border-r border-cyan-500/20 pr-6; }
+
+/* 数据网格样式 */
+.section-label { font-size: 1.3vh; @apply text-cyan-400 font-bold tracking-widest mb-1 opacity-90; }
+.data-item .label { font-size: 1.1vh; @apply text-gray-400 uppercase tracking-wider opacity-80; }
+.env-cell { @apply bg-cyan-950/30 border border-cyan-500/20 p-2 flex flex-col justify-center; }
+.env-cell-title { font-size: 0.9vh; @apply text-gray-400 mb-1 font-bold; }
+.env-cell-val { font-size: 2.2vh; @apply font-black tabular-nums text-white; }
+
+/* 进度条 */
+.progress-bg { @apply w-full bg-gray-800 rounded-sm overflow-hidden; }
+.progress-bar { @apply h-full shadow-[0_0_10px_#22d3ee] transition-all duration-[100ms] ease-linear; }
+
+/* 图表占位符背景 */
+.chart-placeholder {
+  background: repeating-linear-gradient(0deg, transparent, transparent 19%, rgba(0,255,255,0.05) 20%),
+              repeating-linear-gradient(90deg, transparent, transparent 19%, rgba(0,255,255,0.05) 20%);
+  background-size: 5vh 5vh;
 }
 
-.hud-side-left .grid div {
-  font-size: 1.2vh !important;
-  @apply p-1 rounded-sm; /* 这里的 p-2 改为 p-1，节省高度 */
-  background: rgba(6, 78, 113, 0.2);
-}
+/* ================== 中间控制区 ================== */
+.hud-center { @apply flex-1 relative flex justify-center items-center; }
 
-.hud-side-left { @apply border-l border-cyan-500/20 pl-8; }
-.hud-side-right { @apply border-r border-cyan-500/20 pr-8; }
-
-.section-label {
-  font-size: 1.2vh;
-  @apply text-cyan-400 font-bold tracking-widest mb-2 opacity-90;
-}
-
-.data-item { @apply flex flex-col gap-0 w-full; }
-
-.data-item .label {
-  font-size: 1.1vh;
-  @apply text-gray-400 uppercase tracking-wider mb-1;
-  opacity: 0.8;
-}
-
-/* 数值与单位样式 */
-.value-row { @apply flex items-baseline gap-2; }
-.value {
-  font-size: 2.8vh; 
-  @apply font-black tabular-nums text-white;
-}
-
-/* 专门针对右侧数据，防止换行 */
-.hud-side-right .value {
-  font-size: 1.8vh !important; /* 调小字号 */
-  white-space: nowrap;         /* 强制不换行 */
-  letter-spacing: -0.05vh;     /* 稍微收紧字符间距 */
-  @apply text-cyan-400;        /* 颜色改回青色 */
-}
-
-.unit {
-  font-size: 1.3vh;
-  @apply text-gray-500 ml-1 font-bold;
-}
-
-/* 图表容器尺寸适配 */
-.chart-container-l {
-  height: 38vh;        /* 从 28vh 增大到 38vh，让曲线拉开 */
-  @apply mt-2 pt-2 border-t border-cyan-500/10;
-}
-.chart-container-r { height: 35vh; }
-
-/* 原始数据流样式 (解决调不动的问题) */
-.quat-stream-container { @apply opacity-80; }
-.quat-stream-text {
-  font-size: 1.3vh !important;
-  line-height: 1.4;
-  @apply text-cyan-500/90 font-bold;
-}
-
-/* 进度条样式 */
-.progress-bg { @apply w-full h-1 bg-gray-800 rounded-full mt-1 overflow-hidden; }
-.progress-bar { @apply h-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)] transition-all duration-300; }
-
-/* =========================================
-   4. 中间瞄准与按钮 (响应式适配)
-   ========================================= */
-.hud-center {
-  @apply flex-1 relative flex justify-center items-center;
-}
-
-/* 发射按钮：固定在底部偏移 */
-.launch-btn {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, 28vh); /* 锁死在引擎下方位置 */
-  width: 32vh;
-  height: 7.5vh;
-  background: rgba(0, 255, 255, 0.05);
-  backdrop-filter: blur(1px);
-  @apply border border-cyan-500/40 text-cyan-400 overflow-hidden;
-  clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
-  transition: all 0.3s ease;
-}
-
-.launch-btn:hover {
-  background: rgba(0, 255, 255, 0.15);
-  @apply border-cyan-300 shadow-[0_0_20px_rgba(0,255,255,0.2)];
-}
-
-.btn-content { @apply flex flex-col items-center justify-center h-full w-full whitespace-nowrap; }
-.btn-status-text { font-size: 0.9vh; @apply opacity-50 mb-1 tracking-widest; }
-.btn-main-text { font-size: 2.2vh; @apply font-black tracking-widest text-shadow-glow; }
-
-/* 瞄准框容器 */
 .targeting-reticle {
-  position: absolute;
-  top: 50%;
-  left: 50%;
+  @apply absolute top-1/2 left-1/2 flex justify-center items-center pointer-events-none;
   transform: translate(-50%, -55%);
-  height: 65vh;
-  width: calc(65vh * 0.55);
-  @apply pointer-events-none flex justify-center items-center;
+  height: 50vh; width: calc(50vh * 1.5); /* 风洞比较长，框改宽一点 */
 }
-
-/* 瞄准框内数据展示 */
-.data-item-float {
-  @apply absolute flex flex-col items-center justify-center text-cyan-400;
-  text-shadow: 0 0 1px rgba(0, 255, 255, 0.8), 0 0 5px rgba(0, 255, 255, 0.3);
-}
-
-.float-label { font-size: 0.9vh; @apply font-bold tracking-widest mb-1 opacity-70; }
-.float-value { font-size: 2.4vh; @apply font-black tabular-nums leading-none; }
-
-.left-side { @apply top-1/2 -translate-y-1/2 items-end; left: -3vh; }
-.right-side { @apply top-1/2 -translate-y-1/2 items-start; right: -3vh; }
-.bottom-side { @apply left-1/2 -translate-x-1/2; bottom: -8vh; }
-
-/* 滚转水平仪样式 */
-.roll-container { @apply relative w-16 h-4 mt-2 flex items-center justify-center; }
-.roll-scale-bg { @apply absolute w-full h-[1px] bg-cyan-500/20; }
-.roll-horizon-bar {
-  @apply absolute w-10 h-[2px] bg-cyan-400 shadow-[0_0_8px_rgba(0,255,255,0.8)];
-  transition: transform 0.2s linear;
-}
-
-/* 瞄准框支架与十字 */
-.reticle-bracket { @apply absolute border-cyan-500/50; width: 3.5vh; height: 3.5vh; }
+.reticle-bracket { @apply absolute border-cyan-500/50; width: 4vh; height: 4vh; }
 .bracket-tl { @apply top-0 left-0 border-t-2 border-l-2; }
 .bracket-tr { @apply top-0 right-0 border-t-2 border-r-2; }
 .bracket-bl { @apply bottom-0 left-0 border-b-2 border-l-2; }
 .bracket-br { @apply bottom-0 right-0 border-b-2 border-r-2; }
 .center-cross { @apply absolute w-4 h-4; background: radial-gradient(circle, #22d3ee 1.5px, transparent 1.5px); }
 
-/* =========================================
-   5. 底部状态栏 (已精简调优)
-   ========================================= */
-.hud-footer {
-  @apply h-20 bg-black/50 backdrop-blur-md border-t border-cyan-500/10 flex items-center justify-between px-12;
+/* 底部操作台 */
+.control-console {
+  @apply absolute bottom-[4vh] w-[35vh] flex flex-col gap-3 p-4 bg-black/40 backdrop-blur-md border border-cyan-500/30 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.1)];
 }
 
-.env-group { @apply flex gap-16; }
-.env-box { @apply flex flex-col; }
-.env-box .label { font-size: 0.9vh; @apply text-gray-500 font-bold mb-0 opacity-80; }
-.env-box .val { font-size: 2.3vh; @apply font-black tabular-nums text-cyan-400; }
-.env-box .u { font-size: 1vh; @apply text-cyan-900 font-bold ml-1; }
+.power-btn {
+  @apply w-full py-2 border border-cyan-500/50 text-cyan-400 text-[1.5vh] font-black tracking-widest transition-all bg-cyan-900/20;
+}
+.power-btn.active {
+  @apply bg-red-600/80 border-red-400 text-white shadow-[0_0_15px_rgba(220,38,38,0.6)];
+}
 
-.system-logs { font-size: 0.9vh; @apply text-green-700 font-mono text-right leading-tight opacity-70; }
+/* 工业滑块样式 */
+.industrial-slider {
+  @apply w-full appearance-none bg-gray-700 h-1 rounded outline-none;
+}
+.industrial-slider::-webkit-slider-thumb {
+  @apply appearance-none w-3 h-5 bg-cyan-400 cursor-pointer shadow-[0_0_10px_#22d3ee];
+  clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%);
+}
 
-/* =========================================
-   6. 动画与特效
-   ========================================= */
 .text-shadow-glow { text-shadow: 0 0 10px rgba(0, 255, 255, 0.5); }
-
-.btn-scan {
-  @apply absolute top-0 -left-full w-full h-full;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  animation: launch-scan 4s infinite linear;
-}
-
-/* 全屏按钮：做得更精简 */
-.fullscreen-btn {
-  font-size: 0.9vh !important; /* 极小字号 */
-  @apply px-2 py-0.5 border border-cyan-500/30 text-cyan-500/60 cursor-pointer hover:bg-cyan-500/20 ml-3 rounded;
-  transition: all 0.3s ease;
-}
-
-
-@keyframes launch-scan {
-  0% { left: -100%; }
-  20% { left: 100%; }
-  100% { left: 100%; }
-}
-
-/* 模式切换按钮样式 */
-.mode-toggle-btn {
-  @apply relative flex items-center justify-center w-full py-2 px-4 border text-xs font-bold tracking-widest uppercase transition-all duration-300;
-  backdrop-filter: blur(2px);
-}
-
-.mode-toggle-btn:hover {
-  @apply brightness-125;
-}
-
-.indicator {
-  @apply w-2 h-2 rounded-full mr-3 animate-pulse;
-}
 </style>
