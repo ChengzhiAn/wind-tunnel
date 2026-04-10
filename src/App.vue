@@ -72,12 +72,11 @@
             </div>
           </div>
 
-          <!-- 风速曲线图占位 -->
+          <!-- 风速曲线图 -->
           <div class="data-item flex-1 border-t border-cyan-500/20 mt-4 pt-4 flex flex-col">
             <div class="label">WIND PROFILE / 气流稳定性</div>
-            <!-- 这里可以放一个 ECharts 折线图，目前用工业风网格占位 -->
-            <div class="chart-placeholder flex-1 w-full mt-2 border border-cyan-900/30 relative">
-               <div class="absolute inset-0 flex items-center justify-center text-cyan-800/50 text-[1vh]">CHART AREA</div>
+            <div class="chart-container-l w-full mt-2 relative">
+               <WindChart />
             </div>
           </div>
         </aside>
@@ -146,11 +145,11 @@
             <div class="value text-xl text-purple-400">{{ (wtStore.reynoldsNumber).toLocaleString() }}</div>
           </div>
 
-          <!-- 受力曲线图占位 -->
+          <!-- 受力曲线图 -->
           <div class="data-item flex-1 border-t border-cyan-500/20 mt-4 pt-4 flex flex-col">
             <div class="label text-right">FORCE TREND / 测力曲线</div>
-            <div class="chart-placeholder flex-1 w-full mt-2 border border-red-900/30 relative">
-               <div class="absolute inset-0 flex items-center justify-center text-red-800/50 text-[1vh]">CHART AREA</div>
+            <div class="chart-container-r w-full mt-2 relative">
+               <ForceChart />
             </div>
           </div>
         </aside>
@@ -163,6 +162,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import WindTunnelScene from './components/WindTunnelScene.vue' // 确保你的3D组件名叫这个
 import { useWindTunnelStore } from './store/windTunnel'
+import WindChart from './components/WindChart.vue'
+import ForceChart from './components/ForceChart.vue'
 
 const wtStore = useWindTunnelStore()
 
@@ -282,4 +283,18 @@ onBeforeUnmount(() => {
 }
 
 .text-shadow-glow { text-shadow: 0 0 10px rgba(0, 255, 255, 0.5); }
+
+/* 图表容器尺寸适配 */
+.chart-container-l { 
+  height: 28vh; 
+  min-height: 200px; /* 增加保底高度 */
+  flex-shrink: 0;    /* 【核心修复】严禁 flex 布局将其高度压缩为 0 */
+}
+.chart-container-r { 
+  height: 35vh; 
+  min-height: 250px; 
+  flex-shrink: 0;    /* 【核心修复】严禁 flex 布局将其高度压缩为 0 */
+}
+
 </style>
+

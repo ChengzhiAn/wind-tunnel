@@ -34,7 +34,7 @@ const initThree = () => {
   scene.fog = new THREE.FogExp2(0x0b0f19, 0.02) // 深色科技背景
 
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000)
-  camera.position.set(2.5, 1.5, 3.5) // 调整一个绝佳的初始观察视角
+  camera.position.set(0.08, 1, 3.18) // 调整一个绝佳的初始观察视角
 
   // 2. 渲染器高级设置 (抗锯齿、物理光照)
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
