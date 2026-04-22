@@ -3,7 +3,10 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
-  base: '/windTunnel-twin/',
+  build: {
+    outDir: 'dist',
+  },
+  base: './',
   server: {
     // 设置开发服务器代理
     proxy: {

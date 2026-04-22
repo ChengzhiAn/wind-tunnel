@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">冷湖智能风洞测试系统</string>
+    <string name="title_activity_main">冷湖智能风洞测试系统</string>
+    <string name="package_name">com.lenghu.windtunnel</string>
+    <string name="custom_url_scheme">com.lenghu.windtunnel</string>
+</resources>
