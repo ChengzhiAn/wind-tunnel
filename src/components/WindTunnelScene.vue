@@ -1,5 +1,5 @@
 <template>
-  <div ref="container" class="w-screen h-screen bg-slate-900"></div>
+  <div ref="container" class="w-full h-full bg-slate-900"></div>
 </template>
 
 <script setup>
@@ -28,25 +28,35 @@ const particleData =[]
 const SMOKE_START_X = 0.4  // 右侧发烟管口 X 坐标
 const SMOKE_END_X = -0.7   // 左侧排风口 X 坐标
 
+const getViewportSize = () => {
+  const width = container.value?.clientWidth || window.innerWidth
+  const height = container.value?.clientHeight || window.innerHeight
+  return { width, height }
+}
+
 const initThree = () => {
+  const { width, height } = getViewportSize()
+
   // 1. 基础场景设置
   scene = new THREE.Scene()
   scene.fog = new THREE.FogExp2(0x0b0f19, 0.02) // 深色科技背景
 
-  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000)
+  camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000)
   camera.position.set(0.08, 1, 3.18) // 调整一个绝佳的初始观察视角
 
   // 2. 渲染器高级设置 (抗锯齿、物理光照)
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-  renderer.setSize(window.innerWidth, window.innerHeight)
-  renderer.setPixelRatio(window.devicePixelRatio)
+  renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' })
+  renderer.setSize(width, height)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.toneMapping = THREE.ACESFilmicToneMapping // 电影级色调映射
   renderer.toneMappingExposure = 1.2                 // 曝光度
   container.value.appendChild(renderer.domElement)
 
   // 🌟 核心魔法：生成逼真的环境反射 🌟
   const pmremGenerator = new THREE.PMREMGenerator(renderer)
+  pmremGenerator.compileEquirectangularShader()
   scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture
+  pmremGenerator.dispose()
   
   // 【压暗全局环境光】，让场景彻底暗下来，准备迎接彩色霓虹光
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.1) 
@@ -67,8 +77,6 @@ const initThree = () => {
 
     model.traverse((child) => {
       if (child.isMesh) {
-        child.castShadow = true
-        child.receiveShadow = true
 
         // 🌟 智能名称匹配引擎 🌟
         // 同时检查 网格名、父级名、材质名，确保 100% 命中你的 Blender 分类
@@ -270,7 +278,7 @@ const hotColor = new THREE.Color(0xff3300)  // 高能等离子橙红
 const currentColor = new THREE.Color()      // 临时计算颜色
 
 const createSmokeEffect = () => {
-  const particleCount = 3000
+  const particleCount = 1500
   const geometry = new THREE.BufferGeometry()
   const positions = new Float32Array(particleCount * 3)
   const colors = new Float32Array(particleCount * 3) // 🌟 新增：颜色数组
@@ -300,12 +308,12 @@ const createSmokeEffect = () => {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)) // 🌟 绑定颜色数据
 
   const material = new THREE.PointsMaterial({
-    size: 0.025,            
+    size: 0.035,            
     transparent: true,
     opacity: 0.6,
     blending: THREE.AdditiveBlending, 
     depthWrite: false,
-    vertexColors: true // 🌟 核心开关：允许每个粒子拥有独立颜色！不再使用单一 color
+    vertexColors: true
   })
 
   smokeParticles = new THREE.Points(geometry, material)
@@ -317,20 +325,10 @@ const animate = () => {
   animationId = requestAnimationFrame(animate)
   controls.update()
 
-  // ========================================================
-  // 🌟 核心联动：从数据层获取实时风速 🌟
-  // ========================================================
-  // wtStore.actualSpeedMs 最高大概是 55m/s (200km/h)
   const currentWindSpeed = wtStore.actualSpeedMs
-  
-  // 计算动画速度倍率：风速为 0 时倍率为 0，最高风速时倍率约 5.5
-  const speedMultiplier = currentWindSpeed / 10.0 
+  const speedMultiplier = currentWindSpeed / 10.0
 
   if (smokeParticles && teslaModel) {
-    // wtStore.actualSpeedMs 最高大概是 55m/s (200km/h)
-    const currentWindSpeed = wtStore.actualSpeedMs
-    const speedMultiplier = currentWindSpeed / 10.0 
-
     smokeParticles.material.opacity = Math.min(0.6, currentWindSpeed * 0.05)
 
     const positions = smokeParticles.geometry.attributes.position.array
@@ -428,9 +426,10 @@ const animate = () => {
 }
 
 const onWindowResize = () => {
-  camera.aspect = window.innerWidth / window.innerHeight
+  const { width, height } = getViewportSize()
+  camera.aspect = width / height
   camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
+  renderer.setSize(width, height)
 }
 
 onMounted(() => {
@@ -441,6 +440,19 @@ onMounted(() => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(animationId)
   window.removeEventListener('resize', onWindowResize)
+  if (smokeParticles) {
+    smokeParticles.geometry.dispose()
+    smokeParticles.material.dispose()
+  }
+  if (scene) {
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        child.geometry.dispose()
+        if (child.material.dispose) child.material.dispose()
+      }
+    })
+  }
   renderer.dispose()
+  controls.dispose()
 })
 </script>

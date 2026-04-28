@@ -100,12 +100,13 @@
             <!-- 风速滑动条 (仅在启动时可用) -->
             <div class="slider-container" :class="{'opacity-30 pointer-events-none': !wtStore.isFanOn}">
               <div class="flex justify-between text-[1vh] text-cyan-400 mb-1 font-bold">
-                <span>TARGET: {{ wtStore.targetSpeedKmh }} km/h</span>
-                <span>MAX: 200</span>
+                <span>TARGET: {{ wtStore.targetThrottlePct }}%</span>
+                <span>MAX: 100</span>
               </div>
               <input 
-                type="range" min="0" max="200" step="5" 
-                v-model="wtStore.targetSpeedKmh" 
+                type="range" min="0" max="100" step="1" 
+                v-model="wtStore.targetThrottlePct" 
+                @input="handleSpeedChange"
                 class="industrial-slider"
               >
             </div>
@@ -152,6 +153,84 @@
                <ForceChart />
             </div>
           </div>
+
+          <!-- ESP32连接控制 -->
+          <div class="data-item esp32-control-item border-t border-cyan-500/20 pt-4">
+            <div class="esp32-control-panel">
+              <div class="flex justify-between items-center mb-2">
+                <div class="section-label text-cyan-400 font-bold tracking-widest">ESP32 CONTROL / 无线控制</div>
+                <div class="flex items-center">
+                  <span :class="['w-2 h-2 rounded-full mr-1.5', 
+                    wtStore.esp32ConnectionStatus === 'connected' ? 'bg-green-400 shadow-[0_0_8px_#4ade80]' :
+                    wtStore.esp32ConnectionStatus === 'connecting' ? 'bg-yellow-400 shadow-[0_0_8px_#facc15]' :
+                    wtStore.esp32ConnectionStatus === 'error' ? 'bg-red-500 shadow-[0_0_8px_#f87171]' :
+                    'bg-gray-500']">
+                  </span>
+                  <span class="text-[1vh] text-gray-400">
+                    {{ 
+                      wtStore.esp32ConnectionStatus === 'connected' ? '已连接' :
+                      wtStore.esp32ConnectionStatus === 'connecting' ? '连接中' :
+                      wtStore.esp32ConnectionStatus === 'error' ? '连接失败' :
+                      '未连接'
+                    }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex gap-2 mb-2">
+                <input 
+                  type="text" 
+                  v-model="wtStore.esp32Ip" 
+                  class="esp32-ip-input flex-1" 
+                  placeholder="ESP32 IP 地址"
+                  :disabled="wtStore.esp32ConnectionStatus === 'connecting' || wtStore.isEsp32Connected"
+                >
+              </div>
+
+              <button 
+                class="esp32-connect-btn w-full"
+                :disabled="wtStore.esp32ConnectionStatus === 'connecting'"
+                @click="wtStore.isEsp32Connected ? wtStore.disconnectFromEsp32() : wtStore.connectToEsp32()"
+              >
+                {{ 
+                  wtStore.esp32ConnectionStatus === 'connecting' ? '连接中...' :
+                  wtStore.isEsp32Connected ? '断开连接' :
+                  '连接 ESP32'
+                }}
+              </button>
+
+              <div v-if="wtStore.lastConnectionError" class="text-[0.9vh] text-red-400 mt-2">
+                错误: {{ wtStore.lastConnectionError }}
+              </div>
+
+              <div v-if="wtStore.isEsp32Connected" class="esp32-telemetry-grid">
+                <div class="esp32-telemetry-row">
+                  <span class="text-gray-400">ARMED</span>
+                  <span :class="wtStore.esp32Telemetry?.armed ? 'text-green-400' : 'text-yellow-400'">
+                    {{ wtStore.esp32Telemetry?.armed ? 'YES' : 'NO' }}
+                  </span>
+                </div>
+                <div class="esp32-telemetry-row">
+                  <span class="text-gray-400">FAILSAFE</span>
+                  <span :class="wtStore.esp32Telemetry?.timeout ? 'text-red-400' : 'text-green-400'">
+                    {{ wtStore.esp32Telemetry?.timeout ? 'TIMEOUT' : 'OK' }}
+                  </span>
+                </div>
+                <div class="esp32-telemetry-row">
+                  <span class="text-gray-400">PWM</span>
+                  <span class="text-cyan-300 tabular-nums">
+                    {{ wtStore.esp32Telemetry?.pulse_us ?? '--' }} us
+                  </span>
+                </div>
+                <div class="esp32-telemetry-row">
+                  <span class="text-gray-400">TELEM</span>
+                  <span class="text-gray-400 tabular-nums">
+                    {{ wtStore.lastTelemetryAt ? Math.max(0, Math.floor((Date.now() - wtStore.lastTelemetryAt) / 1000)) + 's ago' : '--' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </aside>
       </main>
     </div>
@@ -159,21 +238,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import WindTunnelScene from './components/WindTunnelScene.vue' // 确保你的3D组件名叫这个
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import WindTunnelScene from './components/WindTunnelScene.vue'
 import { useWindTunnelStore } from './store/windTunnel'
 import WindChart from './components/WindChart.vue'
 import ForceChart from './components/ForceChart.vue'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 
 const wtStore = useWindTunnelStore()
 
-// 时钟与全屏逻辑
+interface SystemInsetsPlugin {
+  getInsets(): Promise<{
+    top: number
+    right: number
+    bottom: number
+    left: number
+  }>
+}
+
+const SystemInsets = registerPlugin<SystemInsetsPlugin>('SystemInsets')
+
 const realTime = ref('')
 let clockTimer: number
 
 const updateClock = () => {
   const now = new Date()
-  realTime.value = now.toTimeString().split(' ')[0]
+  const timeParts = now.toTimeString().split(' ')
+  realTime.value = timeParts[0] || ''
 }
 
 const isFullscreen = ref(false)
@@ -187,26 +278,70 @@ const toggleFullscreen = () => {
   }
 }
 
+const handleSpeedChange = () => {
+  if (wtStore.isEsp32Connected && wtStore.isFanOn) {
+    wtStore.sendControlCommand(wtStore.targetThrottlePct)
+  }
+}
+
+const setSafeAreaInsets = (_top = 0, right = 0, bottom = 0, left = 0) => {
+  const root = document.documentElement
+  // The Pad already lays the app below the status bar, so only reserve bottom/side insets.
+  root.style.setProperty('--app-safe-top', '0px')
+  root.style.setProperty('--app-safe-right', `${right}px`)
+  root.style.setProperty('--app-safe-bottom', `${bottom}px`)
+  root.style.setProperty('--app-safe-left', `${left}px`)
+}
+
+const updateSafeAreaInsets = async () => {
+  if (!Capacitor.isNativePlatform()) {
+    setSafeAreaInsets()
+    return
+  }
+
+  try {
+    const { top, right, bottom, left } = await SystemInsets.getInsets()
+    setSafeAreaInsets(top, right, bottom, left)
+  } catch {
+    setSafeAreaInsets()
+  }
+}
+
+watch(() => wtStore.targetThrottlePct, () => {
+  handleSpeedChange()
+})
+
 onMounted(() => {
   updateClock()
   clockTimer = window.setInterval(updateClock, 1000)
+  void updateSafeAreaInsets()
+  window.addEventListener('resize', updateSafeAreaInsets)
+  window.addEventListener('orientationchange', updateSafeAreaInsets)
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(clockTimer)
+  window.removeEventListener('resize', updateSafeAreaInsets)
+  window.removeEventListener('orientationchange', updateSafeAreaInsets)
 })
 </script>
 
 <style scoped>
-/* 基础适配 */
 .hud-container {
-  @apply relative w-screen bg-black overflow-hidden text-white selection:bg-cyan-500/30;
-  height: 100vh; height: 100dvh; 
+  @apply relative w-screen h-screen bg-black overflow-hidden text-white selection:bg-cyan-500/30;
 }
-.scene-layer { @apply absolute inset-0 z-0; }
-.hud-overlay { @apply absolute inset-0 z-10 flex flex-col; }
+.scene-layer {
+  @apply absolute inset-0 z-0;
+}
+.hud-overlay {
+  @apply absolute inset-0 z-10 flex flex-col;
+  padding:
+    var(--app-safe-top, 0)
+    var(--app-safe-right, 0)
+    var(--app-safe-bottom, 0)
+    var(--app-safe-left, 0);
+}
 
-/* 顶部 */
 .hud-header {
   @apply flex justify-between items-center px-8 h-[8vh];
   background: linear-gradient(to bottom, rgba(0, 255, 255, 0.1) 0%, transparent 100%);
@@ -220,13 +355,23 @@ onBeforeUnmount(() => {
 .fullscreen-btn { @apply px-2 py-0.5 border border-cyan-500/50 text-[1vh] text-cyan-400 cursor-pointer hover:bg-cyan-500/20 ml-4 rounded; }
 
 /* 主体左右侧边栏 */
-.hud-main { @apply flex-1 relative flex justify-between px-8 py-[3vh]; }
+.hud-main {
+  @apply flex-1 relative flex justify-between px-8;
+  padding-top: 2vh;
+  padding-bottom: 0.6vh;
+}
 .hud-side-left, .hud-side-right {
   width: 22vw; min-width: 320px;
-  @apply flex flex-col gap-[1.5vh];
+  @apply flex flex-col gap-[1vh];
 }
 .hud-side-left { @apply border-l border-cyan-500/20 pl-6; }
-.hud-side-right { @apply border-r border-cyan-500/20 pr-6; }
+.hud-side-right {
+  @apply border-r border-cyan-500/20 pr-6;
+  min-height: 0;
+}
+.hud-side-right .data-item.flex-1 {
+  flex: 0 0 auto !important;
+}
 
 /* 数据网格样式 */
 .section-label { font-size: 1.3vh; @apply text-cyan-400 font-bold tracking-widest mb-1 opacity-90; }
@@ -263,7 +408,7 @@ onBeforeUnmount(() => {
 
 /* 底部操作台 */
 .control-console {
-  @apply absolute bottom-[4vh] w-[35vh] flex flex-col gap-3 p-4 bg-black/40 backdrop-blur-md border border-cyan-500/30 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.1)];
+  @apply absolute bottom-[0.6vh] w-[35vh] flex flex-col gap-3 p-4 bg-black/40 backdrop-blur-md border border-cyan-500/30 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.1)];
 }
 
 .power-btn {
@@ -287,13 +432,51 @@ onBeforeUnmount(() => {
 /* 图表容器尺寸适配 */
 .chart-container-l { 
   height: 28vh; 
-  min-height: 200px; /* 增加保底高度 */
-  flex-shrink: 0;    /* 【核心修复】严禁 flex 布局将其高度压缩为 0 */
+  min-height: 200px; 
+  flex-shrink: 0;    
 }
 .chart-container-r { 
-  height: 35vh; 
-  min-height: 250px; 
-  flex-shrink: 0;    /* 【核心修复】严禁 flex 布局将其高度压缩为 0 */
+  height: 14vh; 
+  min-height: 96px; 
+  flex-shrink: 0;    
+}
+
+/* ESP32控制面板样式 */
+.esp32-control-item {
+  margin-top: auto;
+}
+
+.esp32-control-panel {
+  @apply p-2 bg-black/40 backdrop-blur-md border border-cyan-500/30 rounded-lg;
+}
+
+.esp32-ip-input {
+  @apply w-full px-2 py-0.5 bg-cyan-950/30 border border-cyan-500/30 text-cyan-400 text-[1.05vh] rounded outline-none;
+  font-family: monospace;
+}
+
+.esp32-ip-input:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.esp32-connect-btn {
+  @apply py-1 border border-cyan-500/50 text-cyan-400 text-[1.15vh] font-bold tracking-widest transition-all bg-cyan-900/20 rounded;
+}
+
+.esp32-connect-btn:hover:not(:disabled) {
+  @apply bg-cyan-500/30;
+}
+
+.esp32-connect-btn:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.esp32-telemetry-grid {
+  @apply grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-[0.95vh] text-gray-300;
+}
+
+.esp32-telemetry-row {
+  @apply flex justify-between items-center min-w-0;
 }
 
 </style>

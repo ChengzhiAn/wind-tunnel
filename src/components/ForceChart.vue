@@ -6,12 +6,12 @@
 import { computed } from 'vue'
 import { useWindTunnelStore } from '../store/windTunnel'
 import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { SVGRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
+use([SVGRenderer, LineChart, GridComponent, TooltipComponent])
 
 const wtStore = useWindTunnelStore()
 
@@ -53,7 +53,7 @@ const chartOption = computed(() => {
         smooth: true,
         showSymbol: false,
         itemStyle: { color: '#f87171' },
-        lineStyle: { width: 2, shadowColor: 'rgba(248,113,113,0.5)', shadowBlur: 5 },
+        lineStyle: { width: 2 },
         areaStyle: {
           color: {
             type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
