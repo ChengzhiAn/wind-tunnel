@@ -15,6 +15,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESP32Servo.h>
+#include <Wire.h>
+#include "HX711.h"
 
 // ===== WiFi AP settings =====
 static const char* AP_SSID = "WindTunnel-ESP32";
@@ -31,6 +33,11 @@ static const int ESC_HZ = 50;           // typical ESC/servo frequency
 static const int PULSE_MIN_US = 900;    // per your knob controller spec
 static const int PULSE_MAX_US = 2100;
 static const int PULSE_SAFE_US = 900;   // idle / stop
+
+// ===== Sensor Pins =====
+static const int HX711_DOUT_PIN = 16;
+static const int HX711_SCK_PIN = 4;
+// BME280 & MS4525DO use I2C (SDA=21, SCL=22)
 
 // ===== Safety behavior =====
 static const uint32_t ARM_DELAY_MS = 2500;     // keep SAFE pulse after boot
